@@ -62,10 +62,19 @@ To generated 50 episodes of scripted data, run:
     --dataset_dir <data save dir> \
     --num_episodes 50
 
+    # for example:
+    python3 record_sim_episodes.py \
+    --task_name sim_transfer_cube_scripted \
+    --dataset_dir data/sim_transfer_cube_scripted \
+    --num_episodes 50
+
 To can add the flag ``--onscreen_render`` to see real-time rendering.
 To visualize the episode after it is collected, run
 
     python3 visualize_episodes.py --dataset_dir <data save dir> --episode_idx 0
+
+    # for example:
+    python3 visualize_episodes.py --dataset_dir data/sim_transfer_cube_scripted --episode_idx 0
 
 To train ACT:
     
@@ -73,6 +82,14 @@ To train ACT:
     python3 imitate_episodes.py \
     --task_name sim_transfer_cube_scripted \
     --ckpt_dir <ckpt dir> \
+    --policy_class ACT --kl_weight 10 --chunk_size 100 --hidden_dim 512 --batch_size 8 --dim_feedforward 3200 \
+    --num_epochs 2000  --lr 1e-5 \
+    --seed 0
+
+    # for example:
+    python3 imitate_episodes.py \
+    --task_name sim_transfer_cube_scripted \
+    --ckpt_dir logs/sim_transfer_cube_scripted \
     --policy_class ACT --kl_weight 10 --chunk_size 100 --hidden_dim 512 --batch_size 8 --dim_feedforward 3200 \
     --num_epochs 2000  --lr 1e-5 \
     --seed 0

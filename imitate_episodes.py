@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 from tqdm import tqdm
 from einops import rearrange
+import wandb
+from datetime import datetime
 
 from constants import DT
 from constants import PUPPET_GRIPPER_JOINT_OPEN
@@ -100,6 +102,13 @@ def main(args):
         print()
         exit()
 
+    # Initialize wandb
+    wandb.init(
+        project=args.get('wandb_project', 'robot-imitation'),
+        name=f"{task_name}_{policy_class}_seed{args['seed']}",
+        config=config
+    )
+
     train_dataloader, val_dataloader, stats, _ = load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_size_val)
 
     # save dataset stats
@@ -116,6 +125,8 @@ def main(args):
     ckpt_path = os.path.join(ckpt_dir, f'policy_best.ckpt')
     torch.save(best_state_dict, ckpt_path)
     print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch{best_epoch}')
+    
+    wandb.finish()
 
 
 def make_policy(policy_class, policy_config):
@@ -358,6 +369,11 @@ def train_bc(train_dataloader, val_dataloader, config):
             summary_string += f'{k}: {v.item():.3f} '
         print(summary_string)
 
+        # Log validation metrics to wandb
+        wandb_val_dict = {f'val/{k}': v.item() for k, v in epoch_summary.items()}
+        wandb_val_dict['epoch'] = epoch
+        wandb.log(wandb_val_dict)
+
         # training
         policy.train()
         optimizer.zero_grad()
@@ -377,7 +393,11 @@ def train_bc(train_dataloader, val_dataloader, config):
             summary_string += f'{k}: {v.item():.3f} '
         print(summary_string)
 
-        if epoch % 100 == 0:
+        # Log training metrics to wandb
+        wandb_train_dict = {f'train/{k}': v.item() for k, v in epoch_summary.items()}
+        wandb.log(wandb_train_dict)
+
+        if epoch % 500 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
             plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
@@ -389,6 +409,9 @@ def train_bc(train_dataloader, val_dataloader, config):
     ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{best_epoch}_seed_{seed}.ckpt')
     torch.save(best_state_dict, ckpt_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
+
+    # Log best model info
+    wandb.log({'best_epoch': best_epoch, 'best_val_loss': min_val_loss})
 
     # save training curves
     plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
@@ -417,7 +440,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--onscreen_render', action='store_true')
-    parser.add_argument('--ckpt_dir', action='store', type=str, help='ckpt_dir', required=True)
+    # parser.add_argument('--ckpt_dir', action='store', type=str, help='ckpt_dir', required=True)
     parser.add_argument('--policy_class', action='store', type=str, help='policy_class, capitalize', required=True)
     parser.add_argument('--task_name', action='store', type=str, help='task_name', required=True)
     parser.add_argument('--batch_size', action='store', type=int, help='batch_size', required=True)
@@ -432,4 +455,15 @@ if __name__ == '__main__':
     parser.add_argument('--dim_feedforward', action='store', type=int, help='dim_feedforward', required=False)
     parser.add_argument('--temporal_agg', action='store_true')
     
-    main(vars(parser.parse_args()))
+    # for wandb
+    parser.add_argument('--wandb_project', action='store', type=str, help='wandb project name', default='act')
+
+    # checkpoint directory with timestamp default
+    parser.add_argument('--ckpt_dir', action='store', type=str, help='ckpt_dir', default=None)
+    args = vars(parser.parse_args())
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    args['ckpt_dir'] = f"logs/ckpt_{args['task_name']}_{args['policy_class']}_seed{args['seed']}_{timestamp}"
+    print(f"Using auto-generated checkpoint directory: {args['ckpt_dir']}")
+    
+    main(args)
